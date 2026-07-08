@@ -599,7 +599,7 @@ function prayerBonuses(){
 }
 function drainPrayer(amount){
   if(amount<=0) return;
-  state.currentPrayer = Math.max(0, state.currentPrayer - amount);
+  state.currentPrayer = Math.max(0, Math.round((state.currentPrayer - amount) * 100) / 100);
   if(state.currentPrayer<=0 && state.activePrayers.length>0){
     state.activePrayers = [];
     pushLog(`<span class="hit">Your prayer points run dry and your prayers fade.</span>`);
@@ -740,6 +740,7 @@ async function loadGame(slug, name){
       SKILLS.forEach(s=>{ if(!state.skills[s]) state.skills[s]={xp:0}; });
       if(state.currentHp===undefined) state.currentHp = maxHp();
       if(state.currentPrayer===undefined) state.currentPrayer = maxPrayer();
+      state.currentPrayer = Math.round(state.currentPrayer*100)/100;
       if(!state.activePrayers) state.activePrayers = [];
       if(!state.combatStyle) state.combatStyle = 'shared';
       if(state.lastRestTime===undefined) state.lastRestTime = 0;
@@ -1622,7 +1623,7 @@ function chronicleHtml(){
 }
 function sidebarHtml(){
   const hp = state.currentHp, mhp = maxHp();
-  const pp = state.currentPrayer, mpp = maxPrayer();
+  const pp = Math.round(state.currentPrayer*100)/100, mpp = maxPrayer();
   const combatLvl = getCombatLevel();
   return `
     <div class="card">
@@ -1745,7 +1746,7 @@ function prayerControlsHtml(){
   const plvl = getLevel('prayer');
   return `
     <div style="margin:0 0 14px;">
-      <div style="font-size:0.78rem;color:var(--parch-dim);margin-bottom:6px;">Prayers &middot; ${state.currentPrayer} / ${maxPrayer()} pts</div>
+      <div style="font-size:0.78rem;color:var(--parch-dim);margin-bottom:6px;">Prayers &middot; ${Math.round(state.currentPrayer*100)/100} / ${maxPrayer()} pts</div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;">
         ${PRAYERS.map(p=>{
           const locked = plvl < p.level;
@@ -1857,7 +1858,7 @@ function fightHtml(){
           <div class="bar"><div class="bar-fill hp" style="width:${(state.currentHp/maxHp()*100)}%"></div></div>
           <div style="font-size:0.75rem;color:var(--parch-dim);margin-top:3px;">${state.currentHp} / ${maxHp()} HP</div>
           <div class="bar" style="margin-top:6px;"><div class="bar-fill prayer" style="width:${(maxPrayer()>0?state.currentPrayer/maxPrayer()*100:0)}%"></div></div>
-          <div style="font-size:0.75rem;color:var(--parch-dim);margin-top:3px;">${state.currentPrayer} / ${maxPrayer()} Prayer</div>
+          <div style="font-size:0.75rem;color:var(--parch-dim);margin-top:3px;">${Math.round(state.currentPrayer*100)/100} / ${maxPrayer()} Prayer</div>
         </div>
         <div class="fight-side">
           <h4>${m.name} <span style="color:var(--blood-bright);font-size:0.75rem;">Lv.${m.level}</span></h4>
