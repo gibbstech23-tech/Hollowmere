@@ -1134,6 +1134,78 @@ function useConsumable(id){
   pushLog(`You ${verb} ${item.name} and ${parts.join(' and ')}.`);
   queueSave(); render();
 }
+function ensureTooltipEl(){
+  let tip = document.getElementById('item-tooltip');
+  if(!tip){
+    tip = document.createElement('div');
+    tip.id = 'item-tooltip';
+    tip.style.cssText = 'position:fixed;z-index:200;display:none;background:#1c1712;border:1px solid #c8963e;border-radius:6px;padding:8px 12px;pointer-events:none;max-width:220px;box-shadow:0 6px 20px rgba(0,0,0,0.5);';
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+function positionTooltip(evt){
+  const tip = ensureTooltipEl();
+  const pad = 14;
+  let x = evt.clientX + pad;
+  let y = evt.clientY + pad;
+  const maxX = window.innerWidth - 240;
+  const maxY = window.innerHeight - 140;
+  if(x > maxX) x = evt.clientX - 240 - pad + 20;
+  if(y > maxY) y = evt.clientY - 140;
+  tip.style.left = x+'px';
+  tip.style.top = y+'px';
+}
+function showItemTooltip(evt, id){
+  const it = ITEMS[id];
+  if(!it) return;
+  const statKeys = ['atk','str','def'];
+  const labels = {atk:'Atk', str:'Str', def:'Def'};
+  let equippedId = null;
+  if(it.slot && it.slot!=='quiver') equippedId = state.equipment[it.slot];
+  else if(it.tool) equippedId = state.equipment.weapon && ITEMS[state.equipment.weapon] && ITEMS[state.equipment.weapon].tool===it.tool ? state.equipment.weapon : null;
+  const isEquipped = equippedId === id;
+  const hasStats = statKeys.some(k=>it[k]);
+  const rows = [];
+  if(hasStats){
+    statKeys.forEach(k=>{
+      if(it[k]){
+        let line = `${labels[k]}: +${it[k]}`;
+        if(equippedId && equippedId!==id && ITEMS[equippedId]){
+          const curVal = ITEMS[equippedId][k]||0;
+          const diff = it[k]-curVal;
+          if(diff!==0){
+            const color = diff>0? '#7ec98a':'#e28080';
+            line += ` <span style="color:${color};">(${diff>0?'+':''}${diff} vs equipped)</span>`;
+          } else {
+            line += ` <span style="color:#a5926f;">(same as equipped)</span>`;
+          }
+        }
+        rows.push(line);
+      }
+    });
+  }
+  if(it.heal) rows.push(`Heals ${it.heal} HP`);
+  if(it.prayerRestore) rows.push(`Restores ${it.prayerRestore} Prayer`);
+  if(it.buryXp) rows.push(`Bury: +${it.buryXp} Prayer xp`);
+  if(it.gatherBonus) rows.push(`Gathering: -${Math.round(it.gatherBonus*100)}% miss chance`);
+  if(typeof it.sell === 'number') rows.push(`Sells for ${it.sell}g`);
+  let html = `<div style="font-weight:bold;color:#e8b968;margin-bottom:4px;font-family:'Cinzel',serif;font-size:0.85rem;">${it.name}</div>`;
+  rows.forEach(r=> html += `<div style="font-size:0.75rem;color:#d8c49c;margin-top:2px;">${r}</div>`);
+  if(isEquipped){
+    html += `<div style="font-size:0.68rem;color:#3f6b4a;margin-top:5px;">Currently equipped</div>`;
+  } else if(equippedId && ITEMS[equippedId]){
+    html += `<div style="font-size:0.68rem;color:#a5926f;margin-top:5px;">Compared to: ${ITEMS[equippedId].name}</div>`;
+  }
+  const tip = ensureTooltipEl();
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+  positionTooltip(evt);
+}
+function hideItemTooltip(){
+  const tip = document.getElementById('item-tooltip');
+  if(tip) tip.style.display = 'none';
+}
 function meetsRequirement(id){
   const it = ITEMS[id];
   if(!it || !it.reqSkill) return true;
@@ -1794,7 +1866,7 @@ function inventoryHtml(){
           const meetsWeapon = !it.weaponReqSkill || getLevel(it.weaponReqSkill) >= it.weaponReqLevel;
           const meetsTool = !it.toolReqSkill || getLevel(it.toolReqSkill) >= it.toolReqLevel;
           return `<div class="recipe">
-            <span>${it.name} <span class="qty">x${qty}</span> &middot; ${it.sell||0}g each${reqTxt}</span>
+            <span onmouseenter="showItemTooltip(event,'${id}')" onmousemove="positionTooltip(event)" onmouseleave="hideItemTooltip()" style="cursor:default;">${it.name} <span class="qty">x${qty}</span> &middot; ${it.sell||0}g each${reqTxt}</span>
             <div class="inv-actions">
               ${it.tool? `<button class="btn small" ${meetsWeapon?'':'disabled'} data-equipweapon="${id}">Equip as Weapon</button><button class="btn small" ${meetsTool?'':'disabled'} data-equipbelt="${id}">Add to Tool Belt</button>` : ''}
               ${it.slot? `<button class="btn small" ${meets?'':'disabled'} data-equip="${id}">${it.slot==='quiver'?'Nock':'Equip'}</button>`:''}
@@ -1835,7 +1907,7 @@ function equippedGearHtml(){
         const extra = it ? (s.key==='quiver' ? ` &middot; ${state.inventory[id]||0} in reserve` : (statsTxt(it) ? ` &middot; ${statsTxt(it)}` : '')) : '';
         return `<div class="shop-item">
           <div><div><b>${s.label}</b></div>
-          <div class="req" style="font-size:0.72rem;color:var(--parch-dim);">${it ? `${it.name}${extra}` : 'Nothing equipped'}</div></div>
+          <div class="req" style="font-size:0.72rem;color:var(--parch-dim);">${it ? `<span onmouseenter="showItemTooltip(event,'${id}')" onmousemove="positionTooltip(event)" onmouseleave="hideItemTooltip()" style="cursor:default;">${it.name}${extra}</span>` : 'Nothing equipped'}</div></div>
           ${it ? `<button class="btn small stop" data-unequip="${s.key}">Unequip</button>` : ''}
         </div>`;
       }).join('')}
@@ -1872,7 +1944,7 @@ function upgradeForgeHtml(){
         actionHtml = `<button class="btn small gold" ${canAfford?'':'disabled'} data-upgrade="${id}">Upgrade to +${plus+1} (${costTxt})</button>`;
       }
       return `<div class="recipe">
-        <span>${it.name} <span class="qty">x${qty}</span></span>
+        <span onmouseenter="showItemTooltip(event,'${id}')" onmousemove="positionTooltip(event)" onmouseleave="hideItemTooltip()" style="cursor:default;">${it.name} <span class="qty">x${qty}</span></span>
         ${actionHtml}
       </div>`;
     }).join('')}
@@ -1891,7 +1963,7 @@ function recipeListHtml(cat){
     const makesTxt = r.outputQty && r.outputQty>1 ? ` &middot; makes ${r.outputQty}x` : '';
     const disabledAttr = (locked||noMats||(busy&&!isActive))?'disabled':'';
     return `<div class="recipe ${locked?'locked':''}" style="align-items:flex-start;">
-      <div><div>${r.name}</div><div class="req">Lv.${r.level} &middot; needs ${needTxt}${goldTxt} &middot; +${r.xp}xp &middot; ${r.time}s each${makesTxt} &middot; have ${maxable} makeable</div></div>
+      <div><div>${ITEMS[r.id] && (ITEMS[r.id].slot||ITEMS[r.id].tool) ? `<span onmouseenter="showItemTooltip(event,'${r.id}')" onmousemove="positionTooltip(event)" onmouseleave="hideItemTooltip()" style="cursor:default;">${r.name}</span>` : r.name}</div><div class="req">Lv.${r.level} &middot; needs ${needTxt}${goldTxt} &middot; +${r.xp}xp &middot; ${r.time}s each${makesTxt} &middot; have ${maxable} makeable</div></div>
       <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
         ${isActive ? `
           <div style="width:170px;">
@@ -1938,7 +2010,7 @@ function buyShopHtml(){
     const owned = state.equipment[s.type]===s.id;
     const locked = state.gold < s.price;
     return `<div class="shop-item">
-      <div><div><b>${s.name}</b> ${owned?'<span style="color:var(--forest);font-size:0.75rem;">(equipped)</span>':''}</div>
+      <div><div><b onmouseenter="showItemTooltip(event,'${s.id}')" onmousemove="positionTooltip(event)" onmouseleave="hideItemTooltip()" style="cursor:default;">${s.name}</b> ${owned?'<span style="color:var(--forest);font-size:0.75rem;">(equipped)</span>':''}</div>
       <div class="req" style="font-size:0.72rem;color:var(--parch-dim);">${s.price}g &middot; ${bonusTxt(s.id)}</div></div>
       ${owned? `<button class="btn small stop" data-unequip="${s.type}">Unequip</button>` : `<button class="btn small gold" ${locked?'disabled':''} data-buy="${s.id}">Buy &amp; Equip</button>`}
     </div>`;
