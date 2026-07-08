@@ -493,6 +493,7 @@ function freshState(){
     lastRestTime:0,
     lastAltarTime:0,
     quests:{blacksmithPickaxe:'not_started', lumberjackAxe:'not_started'},
+    killCounts:{},
     combatStyle:'shared',
     location:'town',
     inventory:{},
@@ -746,6 +747,7 @@ async function loadGame(slug, name){
       if(!state.quests) state.quests = {blacksmithPickaxe:'not_started', lumberjackAxe:'not_started'};
       if(!state.quests.blacksmithPickaxe) state.quests.blacksmithPickaxe = 'not_started';
       if(!state.quests.lumberjackAxe) state.quests.lumberjackAxe = 'not_started';
+      if(!state.killCounts) state.killCounts = {};
       if(!state.equipment) state.equipment={weapon:null,armor:null,amulet:null,quiver:null,shield:null};
       if(state.equipment.amulet===undefined) state.equipment.amulet=null;
       if(state.equipment.quiver===undefined) state.equipment.quiver=null;
@@ -824,10 +826,10 @@ function startGather(skill, resource){
 }
 
 let fight = null; // {monsterDef, monsterHp, areaId}
-function startFight(areaId, monsterDef){
+function startFight(areaId, monsterDef, autoAttack){
   if(fight) return;
   stopGather();
-  fight = {areaId, def: monsterDef, hp: monsterDef.hp, maxHp: monsterDef.hp};
+  fight = {areaId, def: monsterDef, hp: monsterDef.hp, maxHp: monsterDef.hp, autoAttack: !!autoAttack};
   render();
   activityInterval = setInterval(combatRound, 1400);
 }
@@ -835,6 +837,13 @@ function fleeFight(){
   clearInterval(activityInterval); activityInterval=null;
   pushLog(`You flee from the ${fight.def.name}.`);
   fight=null; render();
+}
+function killCount(monsterId){ return (state.killCounts && state.killCounts[monsterId]) || 0; }
+const AUTO_ATTACK_UNLOCK = 50;
+function autoAttackUnlocked(monsterId){ return killCount(monsterId) >= AUTO_ATTACK_UNLOCK; }
+function stopAutoAttack(){
+  if(fight) fight.autoAttack = false;
+  render();
 }
 function isRangedEquipped(){
   const wId = state.equipment.weapon;
@@ -991,7 +1000,12 @@ function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
 
 function winFight(){
   const m = fight.def;
+  const areaId = fight.areaId;
+  const wasAuto = fight.autoAttack;
   clearInterval(activityInterval); activityInterval=null;
+  if(!state.killCounts) state.killCounts = {};
+  state.killCounts[m.id] = (state.killCounts[m.id]||0) + 1;
+  const justUnlocked = state.killCounts[m.id] === AUTO_ATTACK_UNLOCK;
   const gold = m.gold[0]+Math.floor(Math.random()*(m.gold[1]-m.gold[0]+1));
   state.gold += gold;
   pushLog(`<span class="lvup">You have defeated the ${m.name}!</span> (+${gold} gold, ${state.gold} total)`);
@@ -1002,6 +1016,16 @@ function winFight(){
       pushLog(`<span class="drop">The ${m.name} drops ${qty>1? qty+'x ':''}${ITEMS[d.id].name}</span> (${state.inventory[d.id]}).`);
     }
   });
+  if(justUnlocked){
+    pushLog(`<span class="lvup">&#9733; You've defeated ${AUTO_ATTACK_UNLOCK} ${m.name}s! Auto-Attack is now available for this monster.</span>`);
+    showToast(`Auto-Attack unlocked: ${m.name}`);
+  }
+  if(wasAuto){
+    fight = null;
+    queueSave();
+    startFight(areaId, Object.assign({}, m), true);
+    return;
+  }
   fight.hp = 0;
   fight.finished = true;
   queueSave(); render();
@@ -1010,8 +1034,9 @@ function fightAgain(){
   if(!fight || !fight.finished) return;
   const areaId = fight.areaId;
   const def = fight.def;
+  const auto = fight.autoAttack;
   fight = null;
-  startFight(areaId, Object.assign({}, def));
+  startFight(areaId, Object.assign({}, def), auto);
 }
 function leaveCombat(){
   fight = null;
@@ -1725,7 +1750,7 @@ function prayerControlsHtml(){
         ${PRAYERS.map(p=>{
           const locked = plvl < p.level;
           const active = state.activePrayers.includes(p.id);
-          return `<button class="btn small ${active?'stop':''}" ${locked?'disabled':''} data-prayer="${p.id}" title="Lv.${p.level} &middot; ${p.desc} &middot; drains ${p.drain}/round">${p.name}</button>`;
+          return `<button class="btn small ${active?'stop':''}" ${locked?'disabled':''} data-prayer="${p.id}" title="Lv.${p.level} &middot; ${p.desc} &middot; drains ${p.drain.toFixed(2)}/round">${p.name}</button>`;
         }).join('')}
       </div>
     </div>
@@ -1769,13 +1794,23 @@ function monsterListHtml(areaId, topMargin){
   if(!loc.monsters || loc.monsters.length===0) return '';
   return `
     <h3 style="font-size:1rem;color:var(--blood-bright);margin:${topMargin||'0'} 0 10px;">Creatures nearby</h3>
-    ${loc.monsters.map(m=>`
+    ${loc.monsters.map(m=>{
+      const kc = killCount(m.id);
+      const unlocked = autoAttackUnlocked(m.id);
+      const progressTxt = unlocked
+        ? `<span style="color:var(--forest);">Auto-Attack unlocked</span>`
+        : `${kc} / ${AUTO_ATTACK_UNLOCK} defeated`;
+      return `
       <div class="monster-card">
         <div class="monster-top"><h4>${m.name}</h4><span class="lv">Lv. ${m.level}</span></div>
         <div class="monster-stats"><span>HP ${m.hp}</span><span>Atk ${m.attack}</span><span>Def ${m.defence}</span></div>
-        <button class="btn stop" data-fight="${areaId}|${m.id}">Engage</button>
+        <div style="font-size:0.68rem;color:var(--parch-dim);margin-bottom:8px;">${progressTxt}</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn stop" data-fight="${areaId}|${m.id}">Engage</button>
+          ${unlocked? `<button class="btn small gold" data-autoengage="${areaId}|${m.id}">Auto-Attack</button>` : ''}
+        </div>
       </div>
-    `).join('')}
+    `;}).join('')}
   `;
 }
 
@@ -1836,7 +1871,11 @@ function fightHtml(){
              <button class="btn" data-fightagain="1">Fight ${m.name} Again</button>
              <button class="btn stop" data-leavecombat="1">Leave Combat</button>
            </div>`
-        : `<button class="btn stop" data-flee="1">Flee</button>`}
+        : `${fight.autoAttack? '<div style="color:var(--gold);font-size:0.8rem;margin-bottom:8px;">&#9733; Auto-Attack engaged &mdash; will keep fighting this monster after each kill.</div>':''}
+           <div style="display:flex;gap:8px;flex-wrap:wrap;">
+             <button class="btn stop" data-flee="1">Flee</button>
+             ${fight.autoAttack? '<button class="btn" data-stopauto="1">Stop Auto-Attack</button>':''}
+           </div>`}
     </div>
     <div class="card">
       ${quickUseHtml()}
@@ -2087,6 +2126,12 @@ function bindEvents(){
     const mon = AREAS[areaId].monsters.find(m=>m.id===monId);
     startFight(areaId, Object.assign({},mon));
   });
+  document.querySelectorAll('[data-autoengage]').forEach(el=>el.onclick=()=>{
+    const [areaId,monId] = el.dataset.autoengage.split('|');
+    const mon = AREAS[areaId].monsters.find(m=>m.id===monId);
+    startFight(areaId, Object.assign({},mon), true);
+  });
+  document.querySelectorAll('[data-stopauto]').forEach(el=>el.onclick=stopAutoAttack);
   document.querySelectorAll('[data-flee]').forEach(el=>el.onclick=fleeFight);
   document.querySelectorAll('[data-fightagain]').forEach(el=>el.onclick=fightAgain);
   document.querySelectorAll('[data-leavecombat]').forEach(el=>el.onclick=leaveCombat);
