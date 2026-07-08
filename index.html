@@ -1450,6 +1450,7 @@ function render(){
       </div>
       <div>
         ${tabsHtml()}
+        ${chronicleHtml()}
         ${mainHtml(loc)}
       </div>
     </div>
@@ -1514,6 +1515,14 @@ function bindLoginEvents(){
   if(input) input.addEventListener('keydown', e=>{ if(e.key==='Enter') createCharacter(input.value); });
 }
 
+function chronicleHtml(){
+  return `
+    <div class="card" style="margin-bottom:14px;">
+      <h3 style="margin:0 0 8px;font-size:0.95rem;color:var(--gold-bright);">Chronicle</h3>
+      <div class="log">${state.log.map(l=>`<div>${l}</div>`).join('') || '<div class="empty" style="padding:0;">Your story begins...</div>'}</div>
+    </div>
+  `;
+}
 function sidebarHtml(){
   const hp = state.currentHp, mhp = maxHp();
   const pp = state.currentPrayer, mpp = maxPrayer();
@@ -1557,10 +1566,6 @@ function sidebarHtml(){
           </div>`;
         }).join('')}
       </div>
-    </div>
-    <div class="card">
-      <h3 style="margin:0 0 8px;font-size:0.95rem;color:var(--gold-bright);">Chronicle</h3>
-      <div class="log">${state.log.map(l=>`<div>${l}</div>`).join('') || '<div class="empty" style="padding:0;">Your story begins...</div>'}</div>
     </div>
   `;
 }
@@ -1766,7 +1771,6 @@ function fightHtml(){
       ${combatStyleControlsHtml()}
       ${prayerControlsHtml()}
     </div>
-    <div class="card"><div class="log">${state.log.map(l=>`<div>${l}</div>`).join('')}</div></div>
   `;
 }
 
